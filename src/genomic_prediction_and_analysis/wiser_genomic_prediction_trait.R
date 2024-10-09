@@ -62,6 +62,7 @@ library(ranger)
 library(mixOmics)
 library(future)
 library(future.apply)
+library(grDevices)
 
 # define computation mode, i.e. local or cluster
 computation_mode <- "cluster"
@@ -81,8 +82,16 @@ options(future.globals.maxSize = 60 * 1024^3)
 options(expressions = 5e5)
 options(warn = -1)
 
+# set color gradients and color vector for predictive abilities (pa)
+blue_gradient <- c("#90B3E0", "#3D9BC5", "#005AB5", "#00407A", "#002A66")
+yellow_orange_gradient <- colorRampPalette(c("#FFEA00", "#FF7A00"))(5)
+pa_colors_ <- c(blue_gradient, yellow_orange_gradient)
+
+# set color vector for computed genomic heritabilities (h2)
+h2_colors_ <- c(blue_gradient[3], yellow_orange_gradient[3])
+
 # define number of cores
-nb_cores_ = 12
+nb_cores_ <- 12
 
 # define function(s) and package(s) to export for parallelization
 pkgs_to_export_ <- c(
@@ -139,6 +148,11 @@ raw_pheno_df <- as.data.frame(fread(paste0(
   pheno_dir_path, "phenotype_data.csv"
 )))
 
+ls_mean_pheno_df <- as.data.frame(fread(paste0(
+  pheno_dir_path,
+  "ls_means_phenotype_traits.csv"
+)))
+
 omic_df <- as.data.frame(fread(paste0(
   geno_dir_path,
   "genomic_data.csv"
@@ -148,33 +162,21 @@ omic_df <- as.data.frame(fread(paste0(
 omic_df <- remove_monomorphic_markers(omic_df)
 monomorphic_markers_list_ <- omic_df$monomorphic_markers
 omic_df <- omic_df$filtered_df
-rownames(omic_df) <- omic_df[, 1]
-omic_df <- omic_df[, -1]
+colnames(omic_df)[1] <- "Genotype"
+
+# merge ls_mean_pheno_df and omic_df for integrity of analyses
+merged_df <- merge(ls_mean_pheno_df, omic_df, by = "Genotype")
+ls_mean_pheno_df <- merged_df[, c("Genotype", traits_)]
+omic_df <- merged_df[, -match(
+  c("Genotype", traits_),
+  colnames(merged_df)
+)]
+
+# rename omic_df rows with genotype names
+rownames(omic_df) <- ls_mean_pheno_df$Genotype
 
 # get number of genotypes
-n <- nrow(omic_df)
-
-# get optimal whitening method and regularization parameter using k-folds CV
-opt_white_reg_par <- optimize_whitening_and_regularization(
-  omic_df, raw_pheno_df, trait_,
-  fixed_effects_vars = c(
-    "TRIAL", "LOC", "YEAR",
-    "GENERATION_BLOC_TRIAL"
-  ),
-  fixed_effects_vars_computed_as_factor = c(
-    "TRIAL", "LOC", "YEAR",
-    "GENERATION_BLOC_TRIAL"
-  ),
-  site_var = NULL,
-  fixed_effects_vars_computed_as_factor_by_site = NULL,
-  random_effects_vars = "Genotype",
-  whitening_method_grid = c("ZCA-cor", "PCA-cor", "Cholesky"),
-  alpha_grid = c(0.01, 0.1),
-  k_folds = 5
-)
-print(opt_white_reg_par)
-opt_whitening_method_ <- as.character(opt_white_reg_par$opt_whitening_method)
-opt_alpha_ <- as.numeric(opt_white_reg_par$opt_alpha_)
+n <- length(ls_mean_pheno_df$Genotype)
 
 # compute wiser phenotypes,
 # since computations are long, save results for later use
@@ -183,17 +185,41 @@ opt_alpha_ <- as.numeric(opt_white_reg_par$opt_alpha_)
 # defined kernel
 if (file.exists(paste0(
   wiser_pheno_dir_path,
-  "wiser_phenotype_estimates_", kernel_,
-  "_kernel_", trait_, ".csv"
+  "wiser_obj_", kernel_,
+  "_kernel_", trait_
 ))) {
   # load corrected phenotypes if file exists
-  wiser_pheno_df <- as.data.frame(fread(paste0(
+  wiser_obj <- readRDS(paste0(
     wiser_pheno_dir_path,
-    "wiser_phenotype_estimates_", kernel_,
-    "_kernel_", trait_, ".csv"
-  )))
-  v_hat <- wiser_pheno_df$v_hat
+    "wiser_obj_", kernel_,
+    "_kernel_", trait_
+  ))
+  v_hat <- wiser_obj$wiser_phenotypes$v_hat
+  rm(wiser_obj)
 } else {
+  # get optimal whitening method and regularization parameter using k-folds CV
+  opt_white_reg_par <- optimize_whitening_and_regularization(
+    omic_df, raw_pheno_df, trait_,
+    fixed_effects_vars = c(
+      "TRIAL", "LOC", "YEAR",
+      "GENERATION_BLOC_TRIAL"
+    ),
+    fixed_effects_vars_computed_as_factor = c(
+      "TRIAL", "LOC", "YEAR",
+      "GENERATION_BLOC_TRIAL"
+    ),
+    site_var = NULL,
+    fixed_effects_vars_computed_as_factor_by_site = NULL,
+    random_effects_vars = "Genotype",
+    whitening_method_grid = c("ZCA-cor", "PCA-cor", "Cholesky"),
+    alpha_grid = c(0.01, 0.1),
+    k_folds = 5
+  )
+  print(opt_white_reg_par)
+  opt_whitening_method_ <- as.character(opt_white_reg_par$opt_whitening_method)
+  opt_alpha_ <- as.numeric(opt_white_reg_par$opt_alpha_)
+  rm(opt_white_reg_par)
+
   # estimate wiser phenotype
   start_time_ <- Sys.time()
   wiser_obj <- estimate_wiser_phenotype(omic_df, raw_pheno_df, trait_,
@@ -222,13 +248,6 @@ if (file.exists(paste0(
 
   # get estimated wiser phenotype
   v_hat <- wiser_obj$wiser_phenotypes$v_hat
-
-  # save wiser phenotype for kernel and trait
-  fwrite(wiser_obj$wiser_phenotypes, paste0(
-    wiser_pheno_dir_path,
-    "wiser_phenotype_estimates_", kernel_,
-    "_kernel_", trait_, ".csv"
-  ), row.names = F, col.names = T)
 
   # save wiser object for kernel and trait
   saveRDS(wiser_obj, paste0(
@@ -285,23 +304,20 @@ df_result_ <- foreach(
     idx_train <- idx_[-idx_val_fold]
 
     # initialize vector of results for the current fold
-    if (kernel_ == "linear") {
-      fold_result <- c(
-        "RF_wiser_linear" = NA,
-        "SVR_wiser_linear" = NA,
-        "GBLUP_wiser_linear" = NA,
-        "RKHS_wiser_linear" = NA,
-        "LASSO_wiser_linear" = NA
-      )
-    } else {
-      fold_result <- c(
-        "RF_wiser_identity" = NA,
-        "SVR_wiser_identity" = NA,
-        "GBLUP_wiser_identity" = NA,
-        "RKHS_wiser_identity" = NA,
-        "LASSO_wiser_identity" = NA
-      )
-    }
+    fold_result <- c(
+      "RF_wiser_pa" = NA,
+      "SVR_wiser_pa" = NA,
+      "GBLUP_wiser_pa" = NA,
+      "GBLUP_wiser_h2" = NA,
+      "RKHS_wiser_pa" = NA,
+      "LASSO_wiser_pa" = NA,
+      "RF_ls_means_pa" = NA,
+      "SVR_ls_means_pa" = NA,
+      "GBLUP_ls_means_pa" = NA,
+      "GBLUP_ls_means_h2" = NA,
+      "RKHS_ls_means_pa" = NA,
+      "LASSO_ls_means_pa" = NA
+    )
 
     # training and prediction based on computed phenotypes, i.e. v_hat
 
@@ -316,7 +332,7 @@ df_result_ <- foreach(
       rf_model,
       omic_df[idx_val, ]
     )
-    fold_result[1] <- cor(
+    fold_result["RF_wiser_pa"] <- cor(
       f_hat_val_rf$predictions,
       v_hat[idx_val]
     )
@@ -341,7 +357,7 @@ df_result_ <- foreach(
       gaussian_svr_model,
       as.matrix(omic_df[idx_val, ])
     )
-    fold_result[2] <- cor(
+    fold_result["SVR_wiser_pa"] <- cor(
       f_hat_val_gaussian_svr,
       v_hat[idx_val]
     )
@@ -356,10 +372,15 @@ df_result_ <- foreach(
       Matrix_covariates = omic_df[idx_val, ],
       add_fixed_effects = T
     )
-    fold_result[3] <- cor(
+    fold_result["GBLUP_wiser_pa"] <- cor(
       f_hat_val_linear_krmm,
       v_hat[idx_val]
     )
+    fold_result["GBLUP_wiser_h2"] <- compute_genomic_h2(
+      linear_krmm_model$sigma2K_hat,
+      linear_krmm_model$sigma2E_hat
+    )
+
     # train and predict with RKHS (non-linear Gaussian kernel krmm)
     gaussian_krmm_model <- krmm(
       Y = v_hat[idx_train],
@@ -371,7 +392,7 @@ df_result_ <- foreach(
       Matrix_covariates = omic_df[idx_val, ],
       add_fixed_effects = T
     )
-    fold_result[4] <- cor(
+    fold_result["RKHS_wiser_pa"] <- cor(
       f_hat_val_gaussian_krmm,
       v_hat[idx_val]
     )
@@ -387,9 +408,103 @@ df_result_ <- foreach(
       newx = as.matrix(omic_df[idx_val, ]),
       s = "lambda.min"
     )
-    fold_result[5] <- cor(
+    fold_result["LASSO_wiser_pa"] <- cor(
       f_hat_val_lasso,
       v_hat[idx_val]
+    )
+
+    # training and prediction based on ls-means
+
+    # train and predict with Random Forest
+    rf_model <- ranger(
+      y = ls_mean_pheno_df[idx_train, trait_],
+      x = omic_df[idx_train, ],
+      mtry = ncol(omic_df) / 3,
+      num.trees = 1000
+    )
+    f_hat_val_rf <- predict(
+      rf_model,
+      omic_df[idx_val, ]
+    )
+    fold_result["RF_ls_means_pa"] <- cor(
+      f_hat_val_rf$predictions,
+      ls_mean_pheno_df[idx_val, trait_]
+    )
+
+    # train and predict with SVR
+    # a correct value for c_par according to Cherkassy and Ma (2004).
+    # Neural networks 17, 113-126 is defined as follows
+    c_par <- max(
+      abs(mean(ls_mean_pheno_df[idx_train, trait_])
+      + 3 * sd(ls_mean_pheno_df[idx_train, trait_])),
+      abs(mean(ls_mean_pheno_df[idx_train, trait_])
+      - 3 * sd(ls_mean_pheno_df[idx_train, trait_]))
+    )
+    gaussian_svr_model <- ksvm(
+      x = as.matrix(omic_df[idx_train, ]),
+      y = ls_mean_pheno_df[idx_train, trait_],
+      scaled = FALSE, type = "eps-svr",
+      kernel = "rbfdot",
+      kpar = "automatic", C = c_par, epsilon = 0.1
+    )
+    f_hat_val_gaussian_svr <- predict(
+      gaussian_svr_model,
+      as.matrix(omic_df[idx_val, ])
+    )
+    fold_result["SVR_ls_means_pa"] <- cor(
+      f_hat_val_gaussian_svr,
+      ls_mean_pheno_df[idx_val, trait_]
+    )
+
+    # train and predict with GBLUP (linear kernel krmm)
+    linear_krmm_model <- krmm(
+      Y = ls_mean_pheno_df[idx_train, trait_],
+      Matrix_covariates = omic_df[idx_train, ],
+      method = "GBLUP"
+    )
+    f_hat_val_linear_krmm <- predict_krmm(linear_krmm_model,
+      Matrix_covariates = omic_df[idx_val, ],
+      add_fixed_effects = T
+    )
+    fold_result["GBLUP_ls_means_pa"] <- cor(
+      f_hat_val_linear_krmm,
+      ls_mean_pheno_df[idx_val, trait_]
+    )
+    fold_result["GBLUP_ls_means_h2"] <- compute_genomic_h2(
+      linear_krmm_model$sigma2K_hat,
+      linear_krmm_model$sigma2E_hat
+    )
+
+    # train and predict with RKHS (non-linear Gaussian kernel krmm)
+    gaussian_krmm_model <- krmm(
+      Y = ls_mean_pheno_df[idx_train, trait_],
+      Matrix_covariates = omic_df[idx_train, ],
+      method = "RKHS", kernel = "Gaussian",
+      rate_decay_kernel = 0.1
+    )
+    f_hat_val_gaussian_krmm <- predict_krmm(gaussian_krmm_model,
+      Matrix_covariates = omic_df[idx_val, ],
+      add_fixed_effects = T
+    )
+    fold_result["RKHS_ls_means_pa"] <- cor(
+      f_hat_val_gaussian_krmm,
+      ls_mean_pheno_df[idx_val, trait_]
+    )
+
+    # train and predict with LASSO
+    cv_fit_lasso_model <- cv.glmnet(
+      intercept = TRUE, y = ls_mean_pheno_df[idx_train, trait_],
+      x = as.matrix(omic_df[idx_train, ]),
+      type.measure = "mse", alpha = 1.0, nfold = 10,
+      parallel = TRUE
+    )
+    f_hat_val_lasso <- predict(cv_fit_lasso_model,
+      newx = as.matrix(omic_df[idx_val, ]),
+      s = "lambda.min"
+    )
+    fold_result["LASSO_ls_means_pa"] <- cor(
+      f_hat_val_lasso,
+      ls_mean_pheno_df[idx_val, trait_]
     )
 
     fold_result
@@ -405,67 +520,193 @@ if (!dir.exists(paste0(output_pred_graphics_path, trait_, "/"))) {
   dir.create(paste0(output_pred_graphics_path, trait_, "/"))
 }
 
-# get methods names
-df_result_ <- as.data.frame(apply(df_result_, 2, as.numeric))
-method_names <- colnames(df_result_)
+# get methods pa
+df_pa_ <- as.data.frame(df_result_[, str_detect(
+  colnames(df_result_),
+  pattern = "_pa"
+)])
+colnames(df_pa_) <- str_replace_all(
+  colnames(df_pa_),
+  pattern = "_pa",
+  replacement = ""
+)
+method_names <- colnames(df_pa_)
+df_pa_ <- as.data.frame(apply(df_pa_, 2, as.numeric))
 
-# initialize plot_ly boxplot graphic
-boxplots_pa_ <- plot_ly()
+# initialize plot_ly for violin + boxplots
+violin_box_plots_pa_ <- plot_ly()
 
-# add boxplots
-for (method_ in method_names) {
-  boxplots_pa_ <- add_boxplot(
-    boxplots_pa_,
-    y = df_result_[[method_]],
-    name = method_,
-    boxpoints = "all",
-    jitter = 0.3,
-    pointpos = -1.8
+# add violin plots
+for (i in seq_along(method_names)) {
+  violin_box_plots_pa_ <- add_trace(
+    violin_box_plots_pa_,
+    type = "violin", # specify violin plot
+    y = df_pa_[[method_names[i]]],
+    name = method_names[i],
+    points = FALSE, # show all points
+    jitter = 0.3, # add jitter for spread
+    pointpos = -1.8, # adjust point position relative to the violin plot
+    marker = list(color = pa_colors_[i]),
+    fillcolor = pa_colors_[i],
+    line = list(color = pa_colors_[i]),
+    meanline = list(visible = FALSE), # do not show mean line
+    scalemode = "width", # keep width constant for comparison
+    opacity = 0.6 # slight transparency to see the boxplot behind it
+  )
+}
+
+# add boxplots on top of the violin plots but hide from legend
+for (i in seq_along(method_names)) {
+  violin_box_plots_pa_ <- add_boxplot(
+    violin_box_plots_pa_,
+    y = df_pa_[[method_names[i]]],
+    name = method_names[i],
+    marker = list(color = pa_colors_[i]),
+    line = list(color = "black", width = 2), # black line for the boxplot
+    fillcolor = "rgba(255,255,255,0)", # transparent fill to see the violin plot underneath
+    width = 0.2, # narrower boxplot to fit inside the violin
+    notchwidth = 0.4, # add notch for median
+    showlegend = FALSE # hide boxplot from legend
   )
 }
 
 # add layout
-boxplots_pa_ <- boxplots_pa_ %>%
+violin_box_plots_pa_ <- violin_box_plots_pa_ %>%
   layout(
     title = paste0(
-      "Genomic prediction PA distributions of methods for ",
-      trait_, ", based on ", ncol(omic_df), " SNPs across ",
-      n_shuff_, " shuffling scenarios for ", k_folds_, "-folds CV"
+      "Genomic PA distributions of models for ",
+      trait_, ", based on ", ncol(omic_df), " SNP across ",
+      n_shuff_, " shuffling scenarios for ", k_folds_, "-folds cv"
     ),
     yaxis = list(
       title = "Predictive ability (PA)",
       range = c(0, 1)
     ),
-    legend = list(title = list(text = "Prediction method"))
+    legend = list(title = list(text = "Prediction model"))
   )
 
-# save boxplots_pa_ graphics
-saveWidget(boxplots_pa_, file = paste0(
-  output_pred_graphics_path, trait_, "/wiser_phenotype_predictive_ability_",
+# save violin_box_plots_pa_ graphics
+saveWidget(violin_box_plots_pa_, file = paste0(
+  output_pred_graphics_path, trait_, "/genomic_pred_results_",
   trait_, "_", kernel_, "_kernel_", ncol(omic_df), "_SNP_",
   k_folds_, "_folds_CV.html"
 ))
 
 # add stats and save predictive ability results
-df_result_[, 1:5] <- signif(apply(df_result_[, 1:5], 2, as.numeric), 2)
-rownames(df_result_) <- paste0("pa_scenario_", 1:nrow(df_result_))
+df_pa_ <- signif(apply(df_pa_, 2, as.numeric), 2)
+rownames(df_pa_) <- paste0("pa_scenario_", 1:nrow(df_pa_))
 
 df_stat <- as.data.frame(rbind(
-  apply(df_result_[, 1:5], 2, mean),
-  apply(df_result_[, 1:5], 2, sd)
+  apply(df_pa_, 2, mean),
+  apply(df_pa_, 2, sd)
 ))
 df_stat <- signif(apply(df_stat, 2, as.numeric), 2)
 rownames(df_stat) <- c("pa_mean", "pa_sd")
 df_stat <- as.data.frame(df_stat)
 
-df_result_ <- rbind(df_result_, df_stat)
+df_pa_ <- rbind(df_pa_, df_stat)
 
-fwrite(df_result_,
+fwrite(df_pa_,
   file = paste0(
     output_pred_results_path,
-    "wiser_phenotype_genomic_pred_results_", ncol(omic_df), "_SNP_",
+    "genomic_pred_results_", ncol(omic_df), "_SNP_",
     trait_, "_", kernel_, "_kernel_", k_folds_, "_folds_CV.csv"
   ), row.names = T
 )
+print(df_pa_)
 
-print(df_result_)
+# get computed h2 for gblup
+df_h2_ <- as.data.frame(df_result_[, str_detect(
+  colnames(df_result_),
+  pattern = "_h2"
+)])
+colnames(df_h2_) <- str_replace_all(
+  colnames(df_h2_),
+  pattern = "_h2",
+  replacement = ""
+)
+method_names <- colnames(df_h2_)
+df_h2_ <- as.data.frame(apply(df_h2_, 2, as.numeric))
+
+# initialize plot_ly for violin + boxplots
+violin_box_plots_h2_ <- plot_ly()
+
+# add violin plots without points
+for (i in seq_along(method_names)) {
+  violin_box_plots_h2_ <- add_trace(
+    violin_box_plots_h2_,
+    type = "violin", # specify violin plot
+    y = df_h2_[[method_names[i]]],
+    name = method_names[i],
+    points = FALSE, # remove points
+    jitter = 0.3, # add jitter for spread (not used since points are removed)
+    pointpos = -1.8, # adjust point position relative to the violin plot (not used here)
+    marker = list(color = h2_colors_[i]),
+    fillcolor = h2_colors_[i],
+    line = list(color = h2_colors_[i]),
+    meanline = list(visible = FALSE), # do not show mean line
+    scalemode = "width", # keep width constant for comparison
+    opacity = 0.6 # slight transparency to see the boxplot behind it
+  )
+}
+
+# add boxplots on top of the violin plots but hide from legend
+for (i in seq_along(method_names)) {
+  violin_box_plots_h2_ <- add_boxplot(
+    violin_box_plots_h2_,
+    y = df_h2_[[method_names[i]]],
+    name = method_names[i],
+    marker = list(color = h2_colors_[i]),
+    line = list(color = "black", width = 2), # black line for the boxplot
+    fillcolor = "rgba(255,255,255,0)", # transparent fill to see the violin plot underneath
+    width = 0.2, # narrower boxplot to fit inside the violin
+    notchwidth = 0.4, # add notch for median
+    showlegend = FALSE # hide boxplot from legend
+  )
+}
+
+# add layout
+violin_box_plots_h2_ <- violin_box_plots_h2_ %>%
+  layout(
+    title = paste0(
+      "Genomic heritability (h2) distributions estimated from GBLUP prediction models for ",
+      trait_, ", based on ", ncol(omic_df), " SNP across ",
+      n_shuff_, " shuffling scenarios for ", k_folds_, "-folds cv"
+    ),
+    yaxis = list(
+      title = "Genomic heritability (h2)",
+      range = c(0, 1)
+    ),
+    legend = list(title = list(text = "Prediction model"))
+  )
+
+# save violin_box_plots_h2_ graphics
+saveWidget(violin_box_plots_h2_, file = paste0(
+  output_pred_graphics_path, trait_, "/genomic_h2_results_",
+  trait_, "_", kernel_, "_kernel_", ncol(omic_df), "_SNP_",
+  k_folds_, "_folds_CV.html"
+))
+
+# add stats and save h2 results
+df_h2_ <- signif(apply(df_h2_, 2, as.numeric), 2)
+rownames(df_h2_) <- paste0("pa_scenario_", 1:nrow(df_h2_))
+
+df_stat <- as.data.frame(rbind(
+  apply(df_h2_, 2, mean),
+  apply(df_h2_, 2, sd)
+))
+df_stat <- signif(apply(df_stat, 2, as.numeric), 2)
+rownames(df_stat) <- c("pa_mean", "pa_sd")
+df_stat <- as.data.frame(df_stat)
+
+df_h2_ <- rbind(df_h2_, df_stat)
+
+fwrite(df_h2_,
+  file = paste0(
+    output_pred_results_path,
+    "genomic_h2_results_", ncol(omic_df), "_SNP_",
+    trait_, "_", kernel_, "_kernel_",
+    k_folds_, "_folds_CV.csv"
+  ), row.names = T
+)
+print(df_h2_)
