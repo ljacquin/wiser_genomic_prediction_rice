@@ -10,4 +10,4 @@
 #SBATCH --cpus-per-task=12
 kernel_num_par=$1
 trait_num_par=$2 
-Rscript wiser_genomic_prediction_trait.R $kernel_num_par $trait_num_par  
+Rscript rice_wiser_genomic_prediction_trait.R $kernel_num_par $trait_num_par  
