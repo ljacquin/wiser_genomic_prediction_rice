@@ -72,10 +72,10 @@ pheno_df <- match_indices(pheno_df, geno_df)
 geno_df <- geno_df[rownames(geno_df) %in% pheno_df$Genotype, ]
 
 # create new factor generation-block-trial
-pheno_df$GENERATION_BLOC_TRIAL <- paste0(
-  pheno_df$GENERATION, "_",
-  pheno_df$BLOC,
-  "_", pheno_df$TRIAL
+pheno_df$Envir <- paste0(
+  pheno_df$TRIAL, "_",
+  pheno_df$BLOC, "_",
+  pheno_df$GENERATION
 )
 
 # write reformatted datasets
@@ -100,7 +100,10 @@ for (trait_ in traits_) {
   # apply multiple regression first
   lm_ <- lm(
     as.formula(
-      paste0(trait_, " ~  1 + Genotype + GENERATION_BLOC_TRIAL")
+      paste0(
+        trait_,
+        " ~  1 + Genotype + Envir"
+      )
     ),
     data = pheno_df_trait_
   )
@@ -115,7 +118,7 @@ ls_means_df <- Reduce(
   function(x, y) {
     merge(x, y,
       by = "Genotype",
-      all = TRUE
+      all = T
     )
   },
   ls_means_list_
@@ -125,5 +128,5 @@ colnames(ls_means_df) <- c("Genotype", traits_)
 # write ls-means
 fwrite(ls_means_df, file = paste0(
   pheno_dir_path,
-  "ls_means_phenotype_traits.csv"
+  "ls_mean_phenotypes.csv"
 ))
