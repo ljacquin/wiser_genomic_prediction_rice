@@ -26,6 +26,7 @@ library(stringr)
 library(tidyr)
 library(dplyr)
 library(lsmeans)
+library(lme4)
 
 # detect and set script path automatically, and source functions
 setwd(dirname(getActiveDocumentContext()$path))
@@ -42,6 +43,10 @@ pheno_dir_path <- "../../data/phenotype_data/"
 
 # set output result path for genomic graphics
 output_genom_graphics_path <- "../../results/genomic_prediction_graphics/"
+
+# set maximum number of principal components to be tested using akaike
+# information criterion
+max_n_comp_ <- 10
 
 # define traits_
 traits_ <- c("FL", "PH", "YLD", "ZN")
@@ -87,16 +92,69 @@ fwrite(as.data.frame(geno_df),
   row.names = T
 )
 
-# get ls-means for each trait across all generations, blocks and trials
+# compute pca for genomic data
+geno_pca <- mixOmics::pca(apply(geno_df, 2, as.numeric), ncomp = max_n_comp_)
+pc_coord_df_ <- as.data.frame(geno_pca$variates)[, 1:max_n_comp_]
+pc_var_names_ <- colnames(pc_coord_df_)
+pc_coord_df_$Genotype <- rownames(geno_df)
 
-# initialize list for traits ls-means
+# get ls-means and blups (using pca as fixed covariates for population structure
+# correction) for each trait across all generations, blocks and trials
+
+# initialize list for traits ls-means and blups
+blup_list_ <- vector("list", length(traits_))
 ls_means_list_ <- vector("list", length(traits_))
+names(blup_list_) <- traits_
 names(ls_means_list_) <- traits_
+aic_ <- rep(0, max_n_comp_)
 
+# compute ls-means and blups
 for (trait_ in traits_) {
   pheno_df_trait_ <- pheno_df[
     which(pheno_df[, trait_] != "na"),
   ]
+  pheno_df_trait_[, trait_] <- as.numeric(pheno_df_trait_[, trait_])
+
+  # merge trait individual phenotypes with associated
+  # pc coordinates for genotypes
+  pheno_df_trait_ <- merge(pheno_df_trait_, pc_coord_df_,
+    by = "Genotype", all = TRUE
+  )
+
+  # compute aic values in order to select number of pcs
+  for (n_comp_ in 1:max_n_comp_) {
+    lmer_model_ <- lmer(
+      as.formula(paste0(
+        trait_,
+        " ~ 1 + Envir + ", paste(pc_var_names_[1:n_comp_],
+          collapse = " + "
+        ),
+        " + (1 | Genotype)"
+      )),
+      data = pheno_df_trait_
+    )
+    aic_[n_comp_] <- AIC(lmer_model_)
+  }
+  n_opt_comp_aic_ <- which.min(aic_)
+  print(paste0("number of pc selected: ", n_opt_comp_aic_))
+
+  # estimate model based on selected number of pcs which minimize aic
+  lmer_model_ <- lmer(
+    as.formula(paste0(
+      trait_,
+      " ~ 1 + Envir + ", paste(pc_var_names_[1:n_opt_comp_aic_],
+        collapse = " + "
+      ),
+      " + (1 | Genotype)"
+    )),
+    data = pheno_df_trait_
+  )
+  df_ <- data.frame(
+    "Genotype" = rownames(ranef(lmer_model_)$Genotype),
+    "blup" = as.numeric(unlist(ranef(lmer_model_)$Genotype))
+  )
+  blup_list_[[trait_]] <- df_
+
   # apply multiple regression first
   lm_ <- lm(
     as.formula(
@@ -114,6 +172,7 @@ for (trait_ in traits_) {
   ))[, c("Genotype", "lsmean")]
 }
 
+# reduce lsmeans list
 ls_means_df <- Reduce(
   function(x, y) {
     merge(x, y,
@@ -125,8 +184,26 @@ ls_means_df <- Reduce(
 )
 colnames(ls_means_df) <- c("Genotype", traits_)
 
+# reduce blup list
+blup_df <- Reduce(
+  function(x, y) {
+    merge(x, y,
+      by = "Genotype",
+      all = T
+    )
+  },
+  blup_list_
+)
+colnames(blup_df) <- c("Genotype", traits_)
+
 # write ls-means
 fwrite(ls_means_df, file = paste0(
   pheno_dir_path,
   "ls_mean_phenotypes.csv"
+))
+
+# write blups
+fwrite(blup_df, file = paste0(
+  pheno_dir_path,
+  "blup_phenotypes.csv"
 ))
