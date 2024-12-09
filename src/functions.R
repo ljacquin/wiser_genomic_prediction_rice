@@ -915,10 +915,7 @@ compute_incidence_matrices_fixed_and_random_effects <- function(
   }
   x_mat <- do.call(cbind, list_x_mat)
   x_mat <- apply(x_mat, 2, as.numeric)
-  # verify that columns has at least a minimum number of 8 values different
-  # from 0 in an attempt to avoid multicollinearity and unreliable estimates
-  x_mat <- x_mat[, colSums(x_mat != 0) >= 8]
-
+  
   # define list of incidence matrices for random effects
   list_z_mat <- vector("list", length(random_effects_vars))
   names(list_z_mat) <- random_effects_vars
