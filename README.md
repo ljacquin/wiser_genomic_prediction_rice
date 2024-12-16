@@ -24,7 +24,7 @@ Download the ```wiser_genomic_prediction_rice``` repository in the current user'
   * ```R -q --vanilla < src/test_requirements.R```
   <p> </p>
   
-* The ```R``` script ```src/rice_data_treatment_and_analysis/rice_data_reformatting_and_blups_lsmeans_computation.R``` allows to perform the data reformatting and phenotypic estimation using LS-means, and BLUPs which integrate principal coordinates of genotypes, derived from genomic data, as fixed effects to account for population structure.
+* The ```R``` script ```src/rice_data_treatment_and_analysis/rice_data_reformatting_and_blups_lsmeans_computation.R``` performs data reformatting and phenotypic estimation using LS-means and BLUPs. The BLUPs incorporate principal coordinates of genotypes, derived from genomic data, as fixed effects to account for population structure.
 
 * The ```R``` script ```src/rice_genomic_prediction_and_analysis/rice_wiser_genomic_prediction_trait.R``` performs, for each trait, the genomic prediction tasks and analyses for the phenotypes estimated using WISER, LS-means, and BLUPs. Note that this script also computes WISER's phenotypic estimates prior to the genomic prediction tasks.
 
