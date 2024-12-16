@@ -28,7 +28,7 @@ Download the ```wiser_genomic_prediction_rice``` repository in the current user'
 
 * The ```R``` script ```src/rice_genomic_prediction_and_analysis/rice_wiser_genomic_prediction_trait.R``` performs, for each trait, the genomic prediction tasks and analyses for the phenotypes estimated using WISER, LS-means, and BLUP. Note that this script also computes WISER's phenotypic estimates prior to the genomic prediction tasks.
 
-* For genomic prediction tasks and analyses, execute the following commands to make scripts and programs executable:
+* For genomic prediction tasks and analyses, execute the following commands to make scripts and programs executable :
 
   *  ```chmod u+rwx src/rice_genomic_prediction_and_analysis/*.sh```
   <p> </p>
