@@ -1300,6 +1300,10 @@ compute_transformed_vars_and_ols_estimates <- function(
       beta_hat <- ginv(t(x_mat_tilde) %*% x_mat_tilde) %*% t(x_mat_tilde) %*% y
       y_hat <- x_mat_tilde %*% beta_hat
       xi_hat <- y - y_hat
+      
+      # add the individual estimated phenotype with fixed effects eliminated
+      # and corrected for the genetic covariance structure.
+      raw_pheno_df$xi_hat <- xi_hat
 
       return(list(
         "omic_df" = omic_df,
@@ -1312,7 +1316,8 @@ compute_transformed_vars_and_ols_estimates <- function(
         "beta_hat" = beta_hat,
         "y_hat" = y_hat,
         "xi_hat" = xi_hat,
-        "y" = y
+        "y" = y,
+        "xi_phenotypes" = raw_pheno_df
       ))
     },
     error = function(e) {
@@ -1462,7 +1467,8 @@ estimate_wiser_phenotype <- function(omic_df, raw_pheno_df, trait_,
         "wiser_x_mat_tilde" = transform_and_ls_obj$x_mat_tilde,
         "wiser_xi_hat" = transform_and_ls_obj$xi_hat,
         "wiser_y_hat" = transform_and_ls_obj$y_hat,
-        "wiser_y" = transform_and_ls_obj$y
+        "wiser_y" = transform_and_ls_obj$y,
+        "wiser_xi_phenotypes" <- transform_and_ls_obj$xi_phenotypes
       ))
     },
     error = function(e) {
@@ -1472,7 +1478,6 @@ estimate_wiser_phenotype <- function(omic_df, raw_pheno_df, trait_,
     }
   )
 }
-
 
 # function which performs parallelized k-folds cv using several prediction methods
 perform_kfold_cv_wiser <- function(omic_df, raw_pheno_df, trait_,
