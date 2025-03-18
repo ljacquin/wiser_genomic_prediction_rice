@@ -65,7 +65,7 @@ library(future.apply)
 library(grDevices)
 
 # define computation mode, i.e. local or cluster
-computation_mode <- "cluster"
+computation_mode <- "local"
 
 # if comutations are local in rstudio, detect and set script path
 # automatically using rstudioapi

@@ -131,7 +131,8 @@ for (trait_ in traits_) {
         ),
         " + (1 | Genotype)"
       )),
-      data = pheno_df_trait_
+      data = pheno_df_trait_,
+      REML = FALSE
     )
     aic_[n_comp_] <- AIC(lmer_model_)
   }
@@ -147,7 +148,8 @@ for (trait_ in traits_) {
       ),
       " + (1 | Genotype)"
     )),
-    data = pheno_df_trait_
+    data = pheno_df_trait_,
+    REML = TRUE
   )
   df_ <- data.frame(
     "Genotype" = rownames(ranef(lmer_model_)$Genotype),
