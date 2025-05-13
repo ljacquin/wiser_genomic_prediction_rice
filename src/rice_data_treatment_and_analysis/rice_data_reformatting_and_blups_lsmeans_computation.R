@@ -103,8 +103,10 @@ pc_coord_df_$Genotype <- rownames(geno_df)
 
 # initialize list for traits ls-means and blups
 blup_list_ <- vector("list", length(traits_))
+blup_pca_list_ <- vector("list", length(traits_))
 ls_means_list_ <- vector("list", length(traits_))
 names(blup_list_) <- traits_
+names(blup_pca_list_) <- traits_
 names(ls_means_list_) <- traits_
 aic_ <- rep(0, max_n_comp_)
 
@@ -123,7 +125,7 @@ for (trait_ in traits_) {
 
   # compute aic values in order to select number of pcs
   for (n_comp_ in 1:max_n_comp_) {
-    lmer_model_ <- lmer(
+    lmer_pca_model_ <- lmer(
       as.formula(paste0(
         trait_,
         " ~ 1 + Envir + ", paste(pc_var_names_[1:n_comp_],
@@ -131,15 +133,16 @@ for (trait_ in traits_) {
         ),
         " + (1 | Genotype)"
       )),
-      data = pheno_df_trait_
+      data = pheno_df_trait_,
+      REML = FALSE
     )
-    aic_[n_comp_] <- AIC(lmer_model_)
+    aic_[n_comp_] <- AIC(lmer_pca_model_)
   }
   n_opt_comp_aic_ <- which.min(aic_)
   print(paste0("number of pc selected: ", n_opt_comp_aic_))
 
   # estimate model based on selected number of pcs which minimize aic
-  lmer_model_ <- lmer(
+  lmer_pca_model_ <- lmer(
     as.formula(paste0(
       trait_,
       " ~ 1 + Envir + ", paste(pc_var_names_[1:n_opt_comp_aic_],
@@ -147,7 +150,23 @@ for (trait_ in traits_) {
       ),
       " + (1 | Genotype)"
     )),
-    data = pheno_df_trait_
+    data = pheno_df_trait_,
+    REML = TRUE
+  )
+  df_ <- data.frame(
+    "Genotype" = rownames(ranef(lmer_pca_model_)$Genotype),
+    "blup_pca" = as.numeric(unlist(ranef(lmer_pca_model_)$Genotype))
+  )
+  blup_pca_list_[[trait_]] <- df_
+
+  # estimate model based on linear mixed model (LMM)
+  lmer_model_ <- lmer(
+    as.formula(paste0(
+      trait_,
+      " ~ 1 + Envir + (1 | Genotype)"
+    )),
+    data = pheno_df_trait_,
+    REML = TRUE
   )
   df_ <- data.frame(
     "Genotype" = rownames(ranef(lmer_model_)$Genotype),
@@ -185,6 +204,18 @@ ls_means_df <- Reduce(
 colnames(ls_means_df) <- c("Genotype", traits_)
 
 # reduce blup list
+blup_pca_df <- Reduce(
+  function(x, y) {
+    merge(x, y,
+      by = "Genotype",
+      all = T
+    )
+  },
+  blup_pca_list_
+)
+colnames(blup_pca_df) <- c("Genotype", traits_)
+
+# reduce blup list
 blup_df <- Reduce(
   function(x, y) {
     merge(x, y,
@@ -200,6 +231,12 @@ colnames(blup_df) <- c("Genotype", traits_)
 fwrite(ls_means_df, file = paste0(
   pheno_dir_path,
   "ls_mean_phenotypes.csv"
+))
+
+# write blups
+fwrite(blup_pca_df, file = paste0(
+  pheno_dir_path,
+  "blup_pca_phenotypes.csv"
 ))
 
 # write blups
