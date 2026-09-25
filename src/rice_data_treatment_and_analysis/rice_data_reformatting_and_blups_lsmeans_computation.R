@@ -319,17 +319,17 @@ colnames(blup_df) <- c("Genotype", traits_)
 # write ls-means
 fwrite(ls_means_df, file = paste0(
   pheno_dir_path,
-  "ls_mean_phenotypes.csv"
+  "ls_mean_breeding_values.csv"
 ))
 
 # write blups
 fwrite(blup_pca_df, file = paste0(
   pheno_dir_path,
-  "blup_pca_phenotypes.csv"
+  "blup_pca_breeding_values.csv"
 ))
 
 # write blups
 fwrite(blup_df, file = paste0(
   pheno_dir_path,
-  "blup_phenotypes.csv"
+  "blup_breeding_values.csv"
 ))
