@@ -1,10 +1,10 @@
 [<img src="img/rice.jpg" width="600"/>]()
 
-# genomic prediction for WISER, LS-means and BLUP phenotypes associated to rice traits
+# genomic prediction for WISER, LS-means and BLUP breeding values associated to rice traits
 
 ### 🎯 Objective
 
-This repository contains R scripts designed for reproducible data analysis and results, aligned with the FAIR principles. The scripts perform data reformatting and phenotypic estimation using WISER, LS-means, and BLUP. The BLUP specifically integrate principal component coordinates of genotypes, derived from genomic data, as fixed effects to account for population structure.
+This repository contains R scripts designed for reproducible data analysis and results, aligned with the FAIR principles. The scripts perform data reformatting and breeding value estimation using WISER, LS-means, and BLUP. The BLUP specifically integrate principal component coordinates of genotypes, derived from genomic data, as fixed effects to account for population structure.
 
 ### 💻 Instructions
 
@@ -24,9 +24,9 @@ Download the ```wiser_genomic_prediction_rice``` repository in the current user'
   * ```R -q --vanilla < src/test_requirements.R```
   <p> </p>
   
-* The ```R``` script ```src/rice_data_treatment_and_analysis/rice_data_reformatting_and_blups_lsmeans_computation.R``` performs data reformatting and phenotypic estimation using LS-means and BLUP. The BLUP incorporate principal component coordinates of genotypes, derived from genomic data, as fixed effects to account for population structure.
+* The ```R``` script ```src/rice_data_treatment_and_analysis/rice_data_reformatting_and_blups_lsmeans_computation.R``` performs data reformatting and breeding value estimation using LS-means and BLUP. The BLUP incorporate principal component coordinates of genotypes, derived from genomic data, as fixed effects to account for population structure.
 
-* The ```R``` script ```src/rice_genomic_prediction_and_analysis/rice_wiser_genomic_prediction_trait.R``` performs, for each trait, the genomic prediction tasks and analyses for the phenotypes estimated using WISER, LS-means, and BLUP. Note that this script also computes WISER's phenotypic estimates prior to the genomic prediction tasks.
+* The ```R``` script ```src/rice_genomic_prediction_and_analysis/rice_wiser_genomic_prediction_trait.R``` performs, for each trait, the genomic prediction tasks and analyses for the breeding values estimated using WISER, LS-means, and BLUP. Note that this script also computes WISER's breeding value estimates prior to the genomic prediction tasks.
 
 * For genomic prediction tasks and analyses, execute the following commands to make scripts and programs executable :
 
