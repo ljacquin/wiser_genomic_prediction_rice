@@ -2,6 +2,8 @@
 
 # genomic prediction for WISER, LS-means and BLUP breeding values associated to rice traits
 
+[![DOI](https://zenodo.org/badge/852177278.svg)](https://doi.org/10.5281/zenodo.23345152)
+
 ### 🎯 Objective
 
 This repository contains R scripts designed for reproducible data analysis and results, aligned with the FAIR principles. The scripts perform data reformatting and breeding value estimation using WISER, LS-means, and BLUP. The BLUP specifically integrate principal component coordinates of genotypes, derived from genomic data, as fixed effects to account for population structure.
